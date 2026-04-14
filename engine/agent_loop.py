@@ -133,6 +133,14 @@ class AgentLoop:
             content = assistant_msg.get("content") or ""
             tool_calls = assistant_msg.get("tool_calls") or []
 
+            # Gemma 4 fallback: parse text-based tool calls like
+            # <execute_tool>web_search(query="...")</execute_tool>
+            if not tool_calls and "<execute_tool>" in content:
+                parsed = self._parse_text_tool_calls(content)
+                if parsed:
+                    tool_calls = parsed
+                    logger.info("Parsed %d text-based tool calls from model output", len(parsed))
+
             # Handle tool hesitation (Gemma 4 common pattern)
             # Instead of nagging the model to call the tool, we call it ourselves
             if not tool_calls and self._is_tool_hesitation(content, history):
@@ -219,6 +227,10 @@ class AgentLoop:
                 tool_name = str(fn.get("name", ""))
                 tool_args = fn.get("arguments", "{}")
 
+                # Gemma 4 sometimes uses its own tool names — normalize
+                tool_name = self._normalize_tool_name(tool_name)
+                tool_args = self._normalize_tool_args(tool_name, tool_args)
+
                 logger.info("Executing tool: %s", tool_name)
                 tool_result = execute_tool(tool_name, tool_args)
                 total_tool_calls += 1
@@ -284,6 +296,81 @@ class AgentLoop:
             if name in normalized:
                 return name
         return None
+
+    # Gemma 4 built-in tool name → our tool name mapping
+    TOOL_NAME_MAP = {
+        "google_search": "web_search",
+        "search": "web_search",
+        "code_execution": "run_command",
+        "urlopen": "fetch_url",
+    }
+
+    @classmethod
+    def _normalize_tool_name(cls, name: str) -> str:
+        """Map Gemma 4 built-in tool names to our tool names."""
+        return cls.TOOL_NAME_MAP.get(name, name)
+
+    @staticmethod
+    def _normalize_tool_args(tool_name: str, raw_args: str) -> str:
+        """
+        Normalize tool arguments from Gemma 4's conventions to ours.
+        E.g. google_search uses {"queries": [...]} but we use {"query": "..."}
+        """
+        if isinstance(raw_args, str):
+            try:
+                args = json.loads(raw_args) if raw_args.strip() else {}
+            except json.JSONDecodeError:
+                return raw_args
+        else:
+            args = raw_args
+
+        if tool_name == "web_search" and "queries" in args and "query" not in args:
+            # Gemma 4 sends {"queries": ["..."]} — flatten to {"query": "..."}
+            queries = args["queries"]
+            if isinstance(queries, list) and queries:
+                args = {"query": queries[0]}
+
+        return json.dumps(args, ensure_ascii=False)
+
+    @staticmethod
+    def _parse_text_tool_calls(content: str) -> List[Dict[str, Any]]:
+        """
+        Parse Gemma 4's text-based tool calls:
+          <execute_tool>
+          web_search(query="latest news about Apple")
+          </execute_tool>
+        """
+        calls = []
+        # Find all <execute_tool>...</execute_tool> blocks
+        for match in re.finditer(
+            r"<execute_tool>\s*(\w+)\(([^)]*)\)\s*</execute_tool>",
+            content, flags=re.S
+        ):
+            func_name = match.group(1)
+            args_str = match.group(2).strip()
+
+            # Parse key=value pairs
+            args = {}
+            if args_str:
+                # Handle key="value" and key='value' patterns
+                for kv_match in re.finditer(
+                    r'(\w+)\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|(\S+))',
+                    args_str
+                ):
+                    key = kv_match.group(1)
+                    value = kv_match.group(2) or kv_match.group(3) or kv_match.group(4)
+                    args[key] = value
+
+            calls.append({
+                "id": f"text_call_{len(calls)}",
+                "type": "function",
+                "function": {
+                    "name": func_name,
+                    "arguments": json.dumps(args, ensure_ascii=False),
+                },
+            })
+
+        return calls
 
     @staticmethod
     def _post_process(content: str, messages: list[dict[str, Any]]) -> str:

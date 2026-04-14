@@ -14,11 +14,6 @@ MLX_BASE_URL = os.getenv("GEMMA_HARNESS_MLX_URL", "http://127.0.0.1:8091")
 MLX_CHAT_ENDPOINT = f"{MLX_BASE_URL}/v1/chat/completions"
 MLX_MODEL = os.getenv("GEMMA_HARNESS_MLX_MODEL", "mlx-community/gemma-4-e4b-it-4bit")
 
-# Dual model support: 4-bit for speed, 8-bit for quality
-# The harness will use whichever model the MLX server currently has loaded
-MLX_MODEL_FAST = "mlx-community/gemma-4-e4b-it-4bit"
-MLX_MODEL_QUALITY = "mlx-community/gemma-4-e4b-it-8bit"
-
 # ── Harness Server ──────────────────────────────────────────────────
 HARNESS_HOST = os.getenv("GEMMA_HARNESS_HOST", "127.0.0.1")
 HARNESS_PORT = int(os.getenv("GEMMA_HARNESS_PORT", "8093"))
