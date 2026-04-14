@@ -171,6 +171,27 @@ class AgentLoop:
                     })
                     continue
 
+            # Hallucination guard: detect fake file content without tool call
+            if not tool_calls and self._is_file_hallucination(content, history):
+                logger.info("Detected file content hallucination, auto-calling read_file")
+                # Extract the file path from the original task
+                file_path = self._extract_file_path(
+                    history[-1].get("content", "") if history else ""
+                )
+                if file_path:
+                    tool_result = execute_tool("read_file", json.dumps({"path": file_path}))
+                    total_tool_calls += 1
+                    history.append({"role": "assistant", "content": content})
+                    history.append({
+                        "role": "user",
+                        "content": (
+                            f"你嘅回覆似乎係估嘅。我已經幫你讀咗真正嘅檔案內容：\n"
+                            f"```\n{json.dumps(tool_result, ensure_ascii=False)[:3000]}\n```\n"
+                            "請根據以上真實內容重新回答。"
+                        ),
+                    })
+                    continue
+
             # No tool calls → we have a final response
             if not tool_calls:
                 # ── REFLECT ───────────────────────────────────────
@@ -295,6 +316,45 @@ class AgentLoop:
         for name in tool_names:
             if name in normalized:
                 return name
+        return None
+
+    @staticmethod
+    def _is_file_hallucination(content: str, messages: List[Dict[str, Any]]) -> bool:
+        """
+        Detect when the model fabricates file contents instead of calling read_file.
+        Pattern: user asks about a file, model returns a code block pretending to
+        show file contents, but never actually called read_file.
+        """
+        if not content:
+            return False
+        # Check if any previous message asked to read a file
+        user_msgs = [m.get("content", "") for m in messages if m.get("role") == "user"]
+        task_text = " ".join(user_msgs).lower()
+        file_keywords = ("read", "讀", "睇", "file", "檔案", ".py", ".js", ".md", ".json", ".yaml", "config")
+        has_file_request = any(kw in task_text for kw in file_keywords)
+
+        # Check if response contains a code block (fake file content)
+        has_code_block = "```" in content
+
+        # Check that no read_file tool was actually called
+        tool_msgs = [m for m in messages if m.get("role") == "tool" and m.get("name") == "read_file"]
+        has_read_file = len(tool_msgs) > 0
+
+        return has_file_request and has_code_block and not has_read_file
+
+    @staticmethod
+    def _extract_file_path(text: str) -> Optional[str]:
+        """Extract a file path from user message text."""
+        # Look for common path patterns
+        patterns = [
+            r'(~/[^\s\'"`,]+)',           # ~/path/to/file
+            r'(/[^\s\'"`,]+\.\w+)',       # /absolute/path.ext
+            r'([^\s\'"`,]+\.(?:py|js|ts|md|json|yaml|yml|toml|cfg|conf|txt))',  # file.ext
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if match:
+                return match.group(1)
         return None
 
     # Gemma 4 built-in tool name → our tool name mapping
