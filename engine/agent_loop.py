@@ -134,17 +134,34 @@ class AgentLoop:
             tool_calls = assistant_msg.get("tool_calls") or []
 
             # Handle tool hesitation (Gemma 4 common pattern)
+            # Instead of nagging the model to call the tool, we call it ourselves
             if not tool_calls and self._is_tool_hesitation(content, history):
-                logger.info("Detected tool hesitation, nudging model")
-                history.append({"role": "assistant", "content": content})
-                history.append({
-                    "role": "user",
-                    "content": (
-                        "請直接使用工具執行，唔需要問我要唔要用。"
-                        "如果你需要用 tool 就直接 call，唔好描述你「會」做咩。"
-                    ),
-                })
-                continue
+                mentioned_tool = self._extract_mentioned_tool(content)
+                if mentioned_tool:
+                    logger.info("Detected tool hesitation for '%s', auto-calling", mentioned_tool)
+                    tool_result = execute_tool(mentioned_tool, {})
+                    total_tool_calls += 1
+
+                    # Inject as if the model called it
+                    history.append({"role": "assistant", "content": content})
+                    history.append({
+                        "role": "user",
+                        "content": (
+                            f"我已經幫你 call 咗 `{mentioned_tool}`，結果如下：\n"
+                            f"```json\n{json.dumps(tool_result, ensure_ascii=False, indent=2)[:2000]}\n```\n"
+                            "請根據以上結果直接回答用戶嘅問題。"
+                        ),
+                    })
+                    continue
+                else:
+                    # Can't determine which tool, give a pointed nudge
+                    logger.info("Detected tool hesitation but can't identify tool, nudging")
+                    history.append({"role": "assistant", "content": content})
+                    history.append({
+                        "role": "user",
+                        "content": "請直接使用工具執行，唔好描述你「會」做咩。",
+                    })
+                    continue
 
             # No tool calls → we have a final response
             if not tool_calls:
@@ -238,6 +255,8 @@ class AgentLoop:
             "先獲取", "先查詢", "用工具查", "幫你查",
             "是否需要", "要唔要我", "要不要我",
             "我會幫你", "讓我先",
+            "我需要使用", "我需要用", "需要使用",
+            "才能告訴", "才能回答",
         )
         tool_mentions = (
             "get_time", "web_search", "fetch_url", "read_file",
@@ -246,6 +265,25 @@ class AgentLoop:
         has_hesitation = any(p in normalized for p in hesitation_phrases)
         has_tool_mention = any(t in normalized for t in tool_mentions)
         return has_hesitation and has_tool_mention
+
+    @staticmethod
+    def _extract_mentioned_tool(content: str) -> Optional[str]:
+        """
+        Extract the tool name from text where the model describes
+        wanting to use a tool.
+        """
+        normalized = content.lower()
+        # Check in priority order (most specific first)
+        tool_names = [
+            "get_time", "web_search", "fetch_url", "read_file",
+            "write_file", "list_directory", "search_files",
+            "run_command", "git_status", "git_diff", "git_log",
+            "git_checkpoint", "save_memory", "recall_memory",
+        ]
+        for name in tool_names:
+            if name in normalized:
+                return name
+        return None
 
     @staticmethod
     def _post_process(content: str, messages: list[dict[str, Any]]) -> str:
