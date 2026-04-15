@@ -78,6 +78,22 @@ plain local Gemma does not reliably provide on its own.
 | Final answer quality control | None | Verification pass before returning final answer |
 | Tool prompt size | Full tool list every time | Task-based tool selection to reduce prompt bloat |
 
+### Execution Brief
+
+On every round, the harness injects a compact execution brief into the system prompt.
+That brief includes:
+
+- current task
+- current round / max rounds
+- tools completed so far
+- recent tool results
+- the next-step instruction
+
+This is especially useful for smaller models such as Gemma 4 E4B 4bit.
+Instead of forcing the model to recover state from a long raw history, the harness
+hands it an explicit working summary. In practice, this reduces loss of focus,
+duplicate tool calls, and "forgot what happened earlier" failures in multi-step runs.
+
 ### Tool-Calling Notes
 
 - `vmlx-serve` is configured with native Gemma 4 tool-calling support.
