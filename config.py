@@ -23,14 +23,14 @@ TIMEZONE = os.getenv("GEMMA_HARNESS_TZ", "Europe/London")
 
 # ── Agent Loop ──────────────────────────────────────────────────────
 MAX_AGENT_ROUNDS = int(os.getenv("GEMMA_HARNESS_MAX_ROUNDS", "8"))
-MAX_TOKENS = int(os.getenv("GEMMA_HARNESS_MAX_TOKENS", "2048"))
+MAX_TOKENS = int(os.getenv("GEMMA_HARNESS_MAX_TOKENS", "1536"))
 TEMPERATURE = float(os.getenv("GEMMA_HARNESS_TEMPERATURE", "0"))
 LLM_TIMEOUT = float(os.getenv("GEMMA_HARNESS_LLM_TIMEOUT", "300"))
 
 # ── Context Budget ──────────────────────────────────────────────────
 # Leave headroom for generation; Gemma 4 E4B supports 128k context
 # but on 16GB M4 we must be conservative with KV cache.
-MAX_CONTEXT_TOKENS = int(os.getenv("GEMMA_HARNESS_CONTEXT_BUDGET", "12000"))
+MAX_CONTEXT_TOKENS = int(os.getenv("GEMMA_HARNESS_CONTEXT_BUDGET", "18000"))
 
 # ── Filesystem Security ────────────────────────────────────────────
 # Directories the agent is allowed to read.
