@@ -62,6 +62,7 @@ plain local Gemma does not reliably provide on its own.
 | Tool hesitation recovery | Usually stalls | Auto-detects hesitation and nudges or injects tool results |
 | File hallucination guard | No guard | Detects fake file reads and forces real `read_file` |
 | Context handling | Raw history only | Budgeted context manager with trimming and memory recall |
+| Execution memory | Hidden in raw turns | Injected execution brief with task, progress, and recent tool results |
 | Final answer quality control | None | Verification pass before returning final answer |
 | Tool prompt size | Full tool list every time | Task-based tool selection to reduce prompt bloat |
 

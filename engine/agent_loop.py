@@ -118,8 +118,17 @@ class AgentLoop:
             logger.info("Agent round %d/%d", round_num, max_rounds)
 
             # Build context-aware messages
+            execution_brief = self._build_execution_brief(
+                task=task,
+                history=history,
+                round_num=round_num,
+                max_rounds=max_rounds,
+                total_tool_calls=total_tool_calls,
+            )
             messages = self.context_mgr.build_messages(
-                history, memory_keys=memory_keys
+                history,
+                memory_keys=memory_keys,
+                execution_brief=execution_brief,
             )
 
             # Call LLM
@@ -490,6 +499,59 @@ class AgentLoop:
         if tool_results:
             return "### 已執行工具\n" + "\n".join(tool_results)
         return "未能完成任何工具呼叫。"
+
+    @staticmethod
+    def _build_execution_brief(
+        task: str,
+        history: List[Dict[str, Any]],
+        round_num: int,
+        max_rounds: int,
+        total_tool_calls: int,
+    ) -> str:
+        """
+        Build a compact execution-state summary for the next model call.
+
+        Gemma 4 E4B performs better when the working state is explicit instead
+        of hidden in a long sequence of raw assistant/tool turns.
+        """
+        completed_tools: list[str] = []
+        recent_results: list[str] = []
+        latest_user_request = task.strip()
+
+        for msg in history:
+            role = msg.get("role")
+            if role == "tool":
+                tool_name = str(msg.get("name", "unknown"))
+                completed_tools.append(tool_name)
+                result_preview = str(msg.get("content", "")).strip()
+                result_preview = re.sub(r"\s+", " ", result_preview)
+                if len(result_preview) > 220:
+                    result_preview = result_preview[:220] + "..."
+                recent_results.append(f"- {tool_name}: {result_preview}")
+            elif role == "user":
+                content = str(msg.get("content", "")).strip()
+                if content:
+                    latest_user_request = content
+
+        if len(recent_results) > 3:
+            recent_results = recent_results[-3:]
+
+        completed_summary = ", ".join(completed_tools[-6:]) if completed_tools else "none yet"
+
+        parts = [
+            f"Task: {task.strip()}",
+            f"Round: {round_num}/{max_rounds}",
+            f"Tools completed so far: {total_tool_calls} ({completed_summary})",
+            "Goal: continue from the current state instead of restarting from scratch.",
+            "Instruction: if enough evidence is already available, answer directly. If not, call the next tool immediately.",
+            f"Latest user-facing request: {latest_user_request}",
+        ]
+
+        if recent_results:
+            parts.append("Recent tool results:")
+            parts.extend(recent_results)
+
+        return "\n".join(parts)
 
     @staticmethod
     def _select_tools(task: str, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
