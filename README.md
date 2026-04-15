@@ -1,6 +1,6 @@
 # gemma-harness
 
-Claude-style agentic harness for local Gemma 4 (MLX / `vmlx-serve`).
+Claude-style agentic harness for local Gemma 4 and compatible Gemma-backed endpoints.
 
 ## What This Repo Does
 
@@ -8,7 +8,19 @@ Claude-style agentic harness for local Gemma 4 (MLX / `vmlx-serve`).
 - Adds tool-calling, verification, and context management
 - Exposes API endpoints via FastAPI (`/chat`, `/invoke`, `/health`, `/tools`)
 
-## Runtime (Mac mini M4 16GB)
+## Who Can Use This
+
+Anyone already running a Gemma 4 endpoint can layer this harness on top to add:
+
+- tool-calling
+- multi-step execution loops
+- recovery from weak / partial tool usage
+- context budgeting and execution memory
+- response verification
+
+This repo does **not** include model weights. It is an execution layer that sits on top of a working Gemma-compatible chat endpoint.
+
+## Example Runtime (Mac mini M4 16GB)
 
 - Model: `mlx-community/gemma-4-e4b-it-4bit`
 - MLX server: `127.0.0.1:8091`
@@ -76,4 +88,7 @@ plain local Gemma does not reliably provide on its own.
 ## Notes
 
 - This repo tracks harness-level logic and defaults.
-- Machine-specific LaunchAgent flags (local service profile) live outside this repo and are managed on-host.
+- Model serving flags and machine-specific LaunchAgent settings live outside this repo and are managed on-host.
+- Filesystem allowlists are configurable via:
+  - `GEMMA_HARNESS_FS_READ_ALLOW`
+  - `GEMMA_HARNESS_FS_WRITE_ALLOW`

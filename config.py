@@ -9,6 +9,24 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+
+def _parse_path_list(env_name: str, default_paths: list[Path]) -> list[Path]:
+    """Parse a colon-separated path list from env, falling back to defaults."""
+    raw = os.getenv(env_name, "").strip()
+    if not raw:
+        return default_paths
+    paths: list[Path] = []
+    for item in raw.split(":"):
+        item = item.strip()
+        if not item:
+            continue
+        paths.append(Path(item).expanduser())
+    return paths or default_paths
+
+
+PROJECT_ROOT = Path(__file__).parent.resolve()
+DEFAULT_WORKSPACE_DIR = Path.home() / ".gemma-harness" / "workspace"
+
 # ── MLX Server ──────────────────────────────────────────────────────
 MLX_BASE_URL = os.getenv("GEMMA_HARNESS_MLX_URL", "http://127.0.0.1:8091")
 MLX_CHAT_ENDPOINT = f"{MLX_BASE_URL}/v1/chat/completions"
@@ -34,17 +52,23 @@ MAX_CONTEXT_TOKENS = int(os.getenv("GEMMA_HARNESS_CONTEXT_BUDGET", "18000"))
 
 # ── Filesystem Security ────────────────────────────────────────────
 # Directories the agent is allowed to read.
-FS_READ_ALLOW = [
-    Path.home() / "Documents" / "Coding",
-    Path.home() / "playroom-library",
-    Path.home() / ".hermes",
-    Path.home() / "dashboard",
-]
+FS_READ_ALLOW = _parse_path_list(
+    "GEMMA_HARNESS_FS_READ_ALLOW",
+    [
+        PROJECT_ROOT,
+        Path.home() / "Documents",
+        DEFAULT_WORKSPACE_DIR,
+    ],
+)
 
 # Directories the agent is allowed to write (subset of read).
-FS_WRITE_ALLOW = [
-    Path.home() / "Documents" / "Coding",
-]
+FS_WRITE_ALLOW = _parse_path_list(
+    "GEMMA_HARNESS_FS_WRITE_ALLOW",
+    [
+        PROJECT_ROOT,
+        DEFAULT_WORKSPACE_DIR,
+    ],
+)
 
 # Patterns to never read or write.
 FS_DENY_PATTERNS = [
@@ -89,6 +113,7 @@ SHELL_TIMEOUT_SECONDS = 30
 
 # ── Memory ──────────────────────────────────────────────────────────
 MEMORY_DIR = Path.home() / ".gemma-harness" / "memory"
+DEFAULT_WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
 MEMORY_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── Prompts ─────────────────────────────────────────────────────────
