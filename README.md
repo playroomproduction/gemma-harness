@@ -78,6 +78,29 @@ plain local Gemma does not reliably provide on its own.
 | Final answer quality control | None | Verification pass before returning final answer |
 | Tool prompt size | Full tool list every time | Task-based tool selection to reduce prompt bloat |
 
+### Delta vs Plain Gemma
+
+Compared with a plain Gemma chat endpoint, this harness currently adds:
+
+- agent loop orchestration (`perceive -> think -> act -> observe -> reflect`)
+- FastAPI wrapper with `/chat`, `/invoke`, `/health`, `/tools`
+- legacy `/invoke` compatibility for existing clients
+- native tool-calling support plus text-style tool-call fallback parsing
+- tool name normalization for Gemma-style tool names
+- automatic recovery when the model hesitates instead of calling a tool
+- file hallucination detection and forced real file reads
+- memory-key auto-detection and recalled memory injection
+- budgeted context trimming instead of raw full-history replay
+- execution brief injection on every round
+- task-based tool subset selection to reduce prompt bloat
+- response verification for:
+  - empty responses
+  - tool hesitation leaking into final answer
+  - repeated paragraphs
+  - incomplete multi-part answers
+  - language drift
+  - raw traceback leakage
+
 ### Execution Brief
 
 On every round, the harness injects a compact execution brief into the system prompt.
