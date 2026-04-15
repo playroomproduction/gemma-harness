@@ -44,6 +44,9 @@ MAX_AGENT_ROUNDS = int(os.getenv("GEMMA_HARNESS_MAX_ROUNDS", "8"))
 MAX_TOKENS = int(os.getenv("GEMMA_HARNESS_MAX_TOKENS", "1536"))
 TEMPERATURE = float(os.getenv("GEMMA_HARNESS_TEMPERATURE", "0"))
 LLM_TIMEOUT = float(os.getenv("GEMMA_HARNESS_LLM_TIMEOUT", "300"))
+ENABLE_SELF_REFINEMENT = os.getenv("GEMMA_HARNESS_ENABLE_SELF_REFINEMENT", "1") == "1"
+SELF_REFINEMENT_MIN_CHARS = int(os.getenv("GEMMA_HARNESS_SELF_REFINEMENT_MIN_CHARS", "180"))
+SUMMARY_MAX_ITEMS = int(os.getenv("GEMMA_HARNESS_SUMMARY_MAX_ITEMS", "8"))
 
 # ── Context Budget ──────────────────────────────────────────────────
 # Leave headroom for generation; Gemma 4 E4B supports 128k context

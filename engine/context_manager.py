@@ -51,6 +51,7 @@ class ContextManager:
         conversation: List[Dict[str, Any]],
         memory_keys: Optional[List[str]] = None,
         execution_brief: str = "",
+        conversation_summary: str = "",
     ) -> List[Dict[str, Any]]:
         """
         Build the final message list within budget.
@@ -71,6 +72,8 @@ class ContextManager:
             memory_block = self._load_memories(memory_keys)
             if memory_block:
                 system_content += f"\n\n## Recalled Memories\n{memory_block}"
+        if conversation_summary:
+            system_content += f"\n\n## Conversation Summary\n{conversation_summary}"
         if execution_brief:
             system_content += f"\n\n## Execution Brief\n{execution_brief}"
 

@@ -118,6 +118,7 @@ class AgentLoop:
             logger.info("Agent round %d/%d", round_num, max_rounds)
 
             # Build context-aware messages
+            conversation_summary = self._build_conversation_summary(history)
             execution_brief = self._build_execution_brief(
                 task=task,
                 history=history,
@@ -129,6 +130,7 @@ class AgentLoop:
                 history,
                 memory_keys=memory_keys,
                 execution_brief=execution_brief,
+                conversation_summary=conversation_summary,
             )
 
             # Call LLM
@@ -205,6 +207,11 @@ class AgentLoop:
             if not tool_calls:
                 # ── REFLECT ───────────────────────────────────────
                 final_content = self._post_process(content, history)
+
+                if self._should_run_self_refinement(final_content):
+                    refined = self._run_self_refinement(task, final_content)
+                    if refined:
+                        final_content = self._post_process(refined, history)
 
                 # Skip verification for error responses
                 if final_content.startswith("[ERROR]"):
@@ -543,7 +550,9 @@ class AgentLoop:
             f"Round: {round_num}/{max_rounds}",
             f"Tools completed so far: {total_tool_calls} ({completed_summary})",
             "Goal: continue from the current state instead of restarting from scratch.",
+            "Planning: internally decide the next best step before answering.",
             "Instruction: if enough evidence is already available, answer directly. If not, call the next tool immediately.",
+            "Clarification rule: if a critical requirement is missing, ask one short clarifying question instead of guessing.",
             f"Latest user-facing request: {latest_user_request}",
         ]
 
@@ -552,6 +561,94 @@ class AgentLoop:
             parts.extend(recent_results)
 
         return "\n".join(parts)
+
+    @staticmethod
+    def _build_conversation_summary(history: List[Dict[str, Any]]) -> str:
+        """
+        Create a deterministic summary of older turns so small models do not need
+        to recover state purely from raw dialogue.
+        """
+        if len(history) <= 4:
+            return ""
+
+        older_messages = history[:-4]
+        summary_lines: list[str] = []
+
+        for msg in older_messages[-config.SUMMARY_MAX_ITEMS:]:
+            role = msg.get("role")
+            content = re.sub(r"\s+", " ", str(msg.get("content", "")).strip())
+            if not content:
+                continue
+            if len(content) > 140:
+                content = content[:140] + "..."
+
+            if role == "user":
+                summary_lines.append(f"- user asked: {content}")
+            elif role == "assistant":
+                summary_lines.append(f"- assistant said: {content}")
+            elif role == "tool":
+                tool_name = str(msg.get("name", "tool"))
+                summary_lines.append(f"- tool {tool_name}: {content}")
+
+        return "\n".join(summary_lines)
+
+    @staticmethod
+    def _looks_like_clarifying_question(text: str) -> bool:
+        stripped = text.strip()
+        if not stripped:
+            return False
+        question_mark = "?" in stripped or "？" in stripped
+        cues = (
+            "請問", "你想", "你要", "可否", "是否", "邊個", "哪個",
+            "要用", "想要", "需要我先", "可唔可以提供",
+        )
+        return question_mark or any(cue in stripped for cue in cues)
+
+    @staticmethod
+    def _should_run_self_refinement(text: str) -> bool:
+        if not config.ENABLE_SELF_REFINEMENT:
+            return False
+        stripped = text.strip()
+        if len(stripped) < config.SELF_REFINEMENT_MIN_CHARS:
+            return False
+        if stripped.startswith("[ERROR]"):
+            return False
+        if AgentLoop._looks_like_clarifying_question(stripped):
+            return False
+        return True
+
+    def _run_self_refinement(self, task: str, draft: str) -> str:
+        """
+        Run a cheap second pass that asks the model to tighten reasoning and
+        writing without changing the factual scope.
+        """
+        refine_messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are revising a draft response from Gemma Harness.\n"
+                    "Improve reasoning clarity, structure, and writing quality.\n"
+                    "Do not invent new facts. Do not mention this critique step.\n"
+                    "If the draft is already good, return a polished version only."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Original task:\n{task}\n\n"
+                    f"Draft answer:\n{draft}\n\n"
+                    "Please return one improved final answer."
+                ),
+            },
+        ]
+
+        refined_msg = self.llm.chat(
+            messages=refine_messages,
+            tools=None,
+            temperature=config.TEMPERATURE,
+            max_tokens=config.MAX_TOKENS,
+        )
+        return str(refined_msg.get("content") or "").strip()
 
     @staticmethod
     def _select_tools(task: str, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

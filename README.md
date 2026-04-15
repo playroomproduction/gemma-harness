@@ -16,6 +16,9 @@ Anyone already running a Gemma 4 endpoint can layer this harness on top to add:
 - multi-step execution loops
 - recovery from weak / partial tool usage
 - context budgeting and execution memory
+- deterministic conversation summary memory
+- self-refinement for reasoning and writing quality
+- short clarifying questions when critical requirements are missing
 - response verification
 
 This repo does **not** include model weights. It is an execution layer that sits on top of a working Gemma-compatible chat endpoint.
@@ -91,7 +94,10 @@ Compared with a plain Gemma chat endpoint, this harness currently adds:
 - file hallucination detection and forced real file reads
 - memory-key auto-detection and recalled memory injection
 - budgeted context trimming instead of raw full-history replay
+- deterministic conversation summary for older turns
 - execution brief injection on every round
+- optional self-refinement pass for non-trivial final answers
+- short clarifying questions when key requirements are missing
 - task-based tool subset selection to reduce prompt bloat
 - response verification for:
   - empty responses
@@ -116,6 +122,23 @@ This is especially useful for smaller models such as Gemma 4 E4B 4bit.
 Instead of forcing the model to recover state from a long raw history, the harness
 hands it an explicit working summary. In practice, this reduces loss of focus,
 duplicate tool calls, and "forgot what happened earlier" failures in multi-step runs.
+
+### Conversation Summary Memory
+
+For longer chats, the harness now creates a deterministic summary of older turns
+and injects that summary back into the prompt. This helps small models keep the
+important state without replaying the entire raw transcript every time.
+
+### Self-Refinement
+
+For non-trivial final answers, the harness can run a second-pass refinement step.
+This is meant to improve reasoning clarity and writing quality without adding new facts.
+
+### Clarifying Questions
+
+If a request is ambiguous and a good answer depends on a missing requirement,
+the harness now explicitly allows one short clarifying question instead of forcing
+the model to guess.
 
 ### Tool-Calling Notes
 
